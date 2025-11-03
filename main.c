@@ -333,6 +333,8 @@ void print_path(char *path, struct winsize ws) {
     saved_path[PATH_MAX - 1] = 0;
 
     int path_length = strlen(saved_path);
+
+    /* максимальное количество символов, на которое мы можем промотать */
     int max_scroll = path_length - ws.ws_col;
     if (max_scroll < 0) max_scroll = 0;
 
@@ -392,11 +394,11 @@ void print_string(char *str, unsigned int column_width, unsigned int column_inde
 
     char buf[NAME_MAX];
 
-    /* заполним буфер пробелами, чтобы printf всегда видел строку нужной длины */
+    /* заполним буфер пробелами */
     for (int i = 0; i < column_width; i++) buf[i] = ' ';
     buf[column_width] = 0;
 
-    /* cлучай 1: можно взять window длины column_width начиная с s */
+    /* cлучай 1: достаточно символов для заполнения ширины колонки начиная с s */
     if (s + column_width <= string_length) {
         memcpy(buf, displayed_string + s, column_width);
         if (s > 0) buf[0] = '<';
@@ -780,6 +782,7 @@ int main()
         return -13;
     }
     memcpy(&new, &old, sizeof(struct termios));
+    /* инвертируем биты, затем применяем маску к c_lflag через побитовое И */
     new.c_lflag &= ~(ICANON | ECHO);
     if (tcsetattr(0, TCSANOW, &new) == -1)
     {
