@@ -30,6 +30,7 @@ int scroll_pos = 0;
 int path_scroll = 0;
 int active_column = 0;
 int column_scrolls[7];
+unsigned int rows;
 
 /* структура для хранения информации
 об объекте файловой системы */
@@ -60,10 +61,7 @@ int compare(struct file_info *file_1, struct file_info *file_2)
 
 void sort(struct file_info *files)
 {
-    if (files == NULL || file_counter == 0)
-    {
-        return;
-    }
+    if (files == NULL || file_counter == 0)  return;
 
     for (unsigned int i = 0; i < file_counter; i++)
     {
@@ -132,7 +130,8 @@ int get_owner(struct stat st, char *uid)
     struct passwd *pw = getpwuid(st.st_uid);
     if (pw == NULL)
     {
-        printf("\rНе удалось получить pw.");
+        printf("\e[%d;1HНе удалось получить pw.", rows);
+        fflush(stdout);
         return -2;
     }
     strcpy(uid, pw->pw_name);
@@ -145,7 +144,8 @@ int get_group(struct stat st, char *gid)
     struct group *gr = getgrgid(st.st_gid);
     if (gr == NULL)
     {
-        printf("\rНе удалось получить gr.");
+        printf("\e[%d;1HНе удалось получить gr.", rows);
+        fflush(stdout);
         return -3;
     }
     strcpy(gid, gr->gr_name);
@@ -183,7 +183,8 @@ int get_mtime(struct stat st, char *mtime)
     struct tm *tmp = localtime(&st.st_mtime);
     if (tmp == NULL)
     {
-        printf("\rНе удалось получить localtime.");
+        printf("\e[%d;1HНе удалось получить localtime.", rows);
+        fflush(stdout);
         return -4;
     }
 
@@ -198,7 +199,8 @@ int get_atime(struct stat st, char *atime)
     struct tm *tmp = localtime(&st.st_atime);
     if (tmp == NULL)
     {
-        printf("\rНе удалось получить localtime.");
+        printf("\e[%d;1HНе удалось получить localtime.", rows);
+        fflush(stdout);
         return -5;
     }
 
@@ -213,7 +215,8 @@ int get_files(char *path, struct file_info **files)
     DIR *dir = opendir(path);
     if (dir == NULL)
     {
-        printf("\rНе удалось открыть директорию.");
+        printf("\e[%d;1HНе удалось открыть директорию.", rows);
+        fflush(stdout);
         return -6;
     }
 
@@ -234,7 +237,9 @@ int get_files(char *path, struct file_info **files)
         {
             if (errno != 0)
             {
-                printf("\rНе удалось получить rd.");
+                printf("\e[%d;1HНе удалось получить rd.", rows);
+                fflush(stdout);
+                closedir(dir);
                 return -7;
             }
             break;
@@ -247,7 +252,8 @@ int get_files(char *path, struct file_info **files)
         tmp = realloc(*files, (local_file_counter + 1) * sizeof(struct file_info));
         if (tmp == NULL)
         {
-            printf("\rНе удалось выделить память для tmp.");
+            printf("\e[%d;1HНе удалось выделить память для tmp.", rows);
+            fflush(stdout);
             free(*files);
             closedir(dir);
             return -8;
@@ -267,7 +273,8 @@ int get_files(char *path, struct file_info **files)
         struct stat st;
         if (stat(full_path, &st) == -1)
         {
-            printf("\rНе удалось получить stat.");
+            printf("\e[%d;1HНе удалось получить stat.", rows);
+            fflush(stdout);
             continue;
         }
 
@@ -277,14 +284,16 @@ int get_files(char *path, struct file_info **files)
         /* owner */
         if (get_owner(st, current_file->uid) != 0)
         {
-            printf("\rНе удалось получить имя владельца для '%s'", current_file->real_name);
+            printf("\e[%d;1HНе удалось получить имя владельца для '%s'", rows, current_file->real_name);
+            fflush(stdout);
             continue;
         }
 
         /* group */
         if (get_group(st, current_file->gid) != 0)
         {
-            printf("\rНе удалось получить имя группы для '%s'", current_file->real_name);
+            printf("\e[%d;1HНе удалось получить имя группы для '%s'", rows, current_file->real_name);
+            fflush(stdout);
             continue;
         }
 
@@ -294,14 +303,16 @@ int get_files(char *path, struct file_info **files)
         /* mtime */
         if (get_mtime(st, current_file->mtime) != 0)
         {
-            printf("\rНе удалось получить время изменения для '%s'", current_file->real_name);
+            printf("\e[%d;1HНе удалось получить время изменения для '%s'", rows, current_file->real_name);
+            fflush(stdout);
             continue;
         }
 
         /* atime */
         if (get_atime(st, current_file->atime) != 0)
         {
-            printf("\rНе удалось получить время доступа для '%s'", current_file->real_name);
+            printf("\e[%d;1HНе удалось получить время доступа для '%s'", rows, current_file->real_name);
+            fflush(stdout);
             continue;
         }
 
@@ -380,13 +391,31 @@ void print_string(char *str, unsigned int column_width, unsigned int column_inde
 
     int string_length = strlen(displayed_string);
 
-    /* если строка полностью помещается */
-    if (string_length <= column_width)
+    /* подсчитываем кириллические символы и добавляем пробелы */
+    int cyrillic_count = count_cyrillic_chars(displayed_string);
+    int adjusted_length = string_length + cyrillic_count;
+
+    /* если строка полностью помещается с учетом дополнительных пробелов */
+    if (adjusted_length <= column_width)
     {
-        printf("%-*s", column_width, displayed_string);
+        /* создаем строку с дополнительными пробелами */
+        char adjusted_string[NAME_MAX * 2]; /* увеличенный буфер */
+        int j = 0;
+        for (unsigned int i = 0; displayed_string[i] != 0; i++) {
+            adjusted_string[j++] = displayed_string[i];
+            /* добавляем пробел после кириллического символа */
+            if ((unsigned char)displayed_string[i] >= 0xD0 && (unsigned char)displayed_string[i] <= 0xDF) {
+                adjusted_string[j++] = ' ';
+                i++; /* пропускаем следующий байт UTF-8 */
+            }
+        }
+        adjusted_string[j] = 0;
+
+        printf("%-*s", column_width, adjusted_string);
         return;
     }
 
+    /* остальной код функции остается без изменений */
     int s = column_scrolls[column_index];
     if (s < 0) s = 0;
     if (s > string_length - 1) s = string_length - 1;
@@ -450,9 +479,11 @@ int display_in_terminal(char *path)
     struct winsize ws;
     if (ioctl(1, TIOCGWINSZ, &ws) == -1)  /* stdout = 1 */
     {
-        printf("\rНе удалось получить размер окна терминала.");
+        printf("\e[%d;1HНе удалось получить размер окна терминала.", rows);
+        fflush(stdout);
         return -9;
     }
+    rows = ws.ws_row;
 
     /* считаем столбцы для таблицы */
 	unsigned int columns[7];
@@ -577,7 +608,8 @@ int keyboard_input()
                 {
                     if (getcwd(path, PATH_MAX) == NULL)
                     {
-                        printf("\rНе удалось получить путь к рабочему каталогу.");
+                        printf("\e[%d;1HНе удалось получить путь к рабочему каталогу.", rows);
+                        fflush(stdout);
                         return 0;
                     }
 
@@ -588,7 +620,8 @@ int keyboard_input()
                     if (file_counter < 0)
                     {
                         file_counter = 0;
-                        printf("\rНе удалось получить файлы в директории.");
+                        printf("\e[%d;1HНе удалось получить файлы в директории.", rows);
+                        fflush(stdout);
                         return 0;
                     }
 
@@ -607,7 +640,7 @@ int keyboard_input()
 
             /* переход в выбранный каталог */
             case '\n':
-                if (file_counter >= 0 && strcmp(files[cursor_pos].type, "directory") == 0)
+                if (strcmp(files[cursor_pos].type, "directory") == 0)
                 {
                     char full_path[PATH_MAX];
                     snprintf(full_path, PATH_MAX, "%s/%s", path, files[cursor_pos].real_name);
@@ -616,7 +649,8 @@ int keyboard_input()
                     {
                         if (getcwd(path, PATH_MAX) == NULL)
                         {
-                            printf("\rНе удалось получить путь к рабочему каталогу.");
+                            printf("\e[%d;1HНе удалось получить путь к рабочему каталогу.", rows);
+                            fflush(stdout);
                             return 0;
                         }
 
@@ -627,7 +661,8 @@ int keyboard_input()
                         if (file_counter < 0)
                         {
                             file_counter = 0;
-                            printf("\rНе удалось получить файлы в директории.");
+                            printf("\e[%d;1HНе удалось получить файлы в директории.", rows);
+                            fflush(stdout);
                             return 0;
                         }
 
@@ -641,6 +676,12 @@ int keyboard_input()
                         }
 
                         return 1;
+                    }
+                    else
+                    {
+                        printf("\e[%d;1HНет доступа к директории.", rows);
+                        fflush(stdout);
+                        return 0;
                     }
                 }
                 break;
@@ -672,6 +713,7 @@ int keyboard_input()
                                     cursor_pos++;
 
                                     struct winsize ws;
+                                    rows = ws.ws_row;
                                     if (ioctl(1, TIOCGWINSZ, &ws) != -1)
                                     {
                                         int height = ws.ws_row - 3;
@@ -724,11 +766,165 @@ void display_data_in_file(struct file_info file, unsigned int columns[])
             case 6: file_ptr = file.atime;        break;
         }
 
-        printf("%-*s", columns[i], file_ptr);
+        /* для имени файла добавляем пробелы для кириллицы */
+        if (i == 0) {
+            char adjusted_name[NAME_MAX * 2];
+            int j = 0;
+            for (unsigned int k = 0; file_ptr[k] != 0; k++) {
+                adjusted_name[j++] = file_ptr[k];
+                if ((unsigned char)file_ptr[k] >= 0xD0 && (unsigned char)file_ptr[k] <= 0xDF) {
+                    adjusted_name[j++] = ' ';
+                    k++; /* пропускаем следующий байт UTF-8 */
+                }
+            }
+            adjusted_name[j] = 0;
+            printf("%-*s", columns[i], adjusted_name);
+        } else {
+            printf("%-*s", columns[i], file_ptr);
+        }
 
         if (i < 6) printf("|");
     }
     putchar('\n');
+}
+
+
+/* рекурсивная функция для вывода в файл */
+void display_files_recursive(char *current_path, unsigned int columns[])
+{
+    struct file_info *local_files = NULL;
+    int local_file_count = 0;
+
+    DIR *dir = opendir(current_path);
+    if (dir == NULL)
+    {
+        printf("\e[%d;1HНе удалось открыть директорию.", rows);
+        fflush(stdout);
+        return;
+    }
+
+    struct dirent *rd;
+    while (1)
+    {
+        rd = readdir(dir);
+        if (rd == NULL)
+        {
+            if (errno != 0)
+            {
+                printf("\e[%d;1HНе удалось получить rd.", rows);
+                fflush(stdout);
+                closedir(dir);
+                return;
+            }
+            break;
+        }
+
+        /* пропускаем "." и ".." */
+        if (strcmp(rd->d_name, ".") == 0 || strcmp(rd->d_name, "..") == 0)
+        {
+            continue;
+        }
+
+        struct file_info *tmp = realloc(local_files, (local_file_count + 1) * sizeof(struct file_info));
+        if (tmp == NULL)
+        {
+            printf("\e[%d;1HНе удалось выделить память для tmp.", rows);
+            fflush(stdout);
+            closedir(dir);
+            free(local_files);
+            return;
+        }
+        local_files = tmp;
+
+        struct file_info *current_file = local_files + local_file_count;
+
+        get_name(rd, current_file->name);
+        strcpy(current_file->real_name, rd->d_name);
+
+        char full_path[PATH_MAX];
+        snprintf(full_path, PATH_MAX, "%s/%s", current_path, rd->d_name);
+
+        struct stat st;
+        if (stat(full_path, &st) == -1)
+        {
+            printf("\e[%d;1HНе удалось получить stat.", rows);
+            fflush(stdout);
+            continue;
+        }
+
+        get_type(st, current_file->type);
+
+        if (get_owner(st, current_file->uid) != 0)
+        {
+            printf("\e[%d;1HНе удалось получить имя владельца для '%s'", rows, current_file->real_name);
+            fflush(stdout);
+            continue;
+        }
+
+        if (get_group(st, current_file->gid) != 0)
+        {
+            printf("\e[%d;1HНе удалось получить имя группы для '%s'", rows, current_file->real_name);
+            fflush(stdout);
+            continue;
+        }
+
+        get_permissions(st, current_file->permissions);
+
+        if (get_mtime(st, current_file->mtime) != 0)
+        {
+            printf("\e[%d;1HНе удалось получить время изменения для '%s'", rows, current_file->real_name);
+            fflush(stdout);
+            continue;
+        }
+
+        if (get_atime(st, current_file->atime) != 0)
+        {
+            printf("\e[%d;1HНе удалось получить время доступа для '%s'", rows, current_file->real_name);
+            fflush(stdout);
+            continue;
+        }
+
+        local_file_count++;
+    }
+    closedir(dir);
+
+    /* сортируем файлы в текущей директории */
+    if (local_files != NULL && local_file_count > 0)
+    {
+        for (unsigned int i = 0; i < local_file_count; i++)
+        {
+            for (unsigned int j = 0; j < local_file_count - i - 1; j++)
+            {
+                if (compare(&local_files[j], &local_files[j + 1]) > 0)
+                {
+                    struct file_info tmp = local_files[j];
+                    local_files[j] = local_files[j + 1];
+                    local_files[j + 1] = tmp;
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < local_file_count; i++)
+    {
+        if (strcmp(local_files[i].type, "directory") != 0)
+        {
+            display_data_in_file(local_files[i], columns);
+        }
+    }
+
+    /* рекурсивно обрабатываем подкаталоги */
+    for (int i = 0; i < local_file_count; i++)
+    {
+        if (strcmp(local_files[i].type, "directory") == 0)
+        {
+            char subdir_path[PATH_MAX];
+            snprintf(subdir_path, PATH_MAX, "%s/%s", current_path, local_files[i].real_name);
+            display_files_recursive(subdir_path, columns);
+        }
+    }
+
+    free(local_files);
 }
 
 
@@ -741,12 +937,16 @@ int main()
     sigact.sa_flags = SA_RESTART;
     if (sigaction(SIGWINCH, &sigact, NULL) == -1)
     {
+        printf("\e[%d;1HНе удалось выставить обработчик сигнала SIGWINCH.", rows);
+        fflush(stdout);
         return -10;
     }
 
     /* находим путь к рабочей директории */
     if (getcwd(path, PATH_MAX) == NULL)
     {
+        printf("\e[%d;1HНе удалось получить путь рабочей директории.", rows);
+        fflush(stdout);
         return -11;
     }
 
@@ -754,6 +954,8 @@ int main()
     file_counter = get_files(path, &files);
     if (file_counter < 0)
     {
+        printf("\e[%d;1HНе удалось вернуть настройки терминала.", rows);
+        fflush(stdout);
         return -12;
     }
 
@@ -765,11 +967,10 @@ int main()
             file_columns[0], "name", file_columns[1], "type", file_columns[2], "owner",
             file_columns[3], "group", file_columns[4], "permissions",
             file_columns[5], "mtime", file_columns[6], "atime");
-        for (int i = 0; i < file_counter; i++)
-		{
-			display_data_in_file(files[i], file_columns);
-		}
-		free(files);
+
+        display_files_recursive(path, file_columns);
+
+        free(files);
 		return 0;
     }
 
@@ -779,6 +980,8 @@ int main()
     struct termios old, new;
     if (tcgetattr(0, &old) == -1)
     {
+        printf("\e[%d;1HНе удалось получить настройки терминала.", rows);
+        fflush(stdout);
         return -13;
     }
     memcpy(&new, &old, sizeof(struct termios));
@@ -786,6 +989,8 @@ int main()
     new.c_lflag &= ~(ICANON | ECHO);
     if (tcsetattr(0, TCSANOW, &new) == -1)
     {
+        printf("\e[%d;1HНе удалось вернуть настройки терминала.", rows);
+        fflush(stdout);
         free(files);
         return -14;
     }
@@ -795,9 +1000,13 @@ int main()
     {
         if (tcsetattr(0, TCSANOW, &old) == -1)
         {
+            printf("\e[%d;1HНе удалось вернуть настройки терминала.", rows);
+            fflush(stdout);
             free(files);
             return -15;
         }
+        printf("\e[%d;1HНе удалось вывести данные в терминал.", rows);
+        fflush(stdout);
         free(files);
         return -16;
     }
@@ -813,9 +1022,13 @@ int main()
             {
                 if (tcsetattr(0, TCSANOW, &old) == -1)
                 {
+                    printf("\e[%d;1HНе удалось вернуть настройки терминала.", rows);
+                    fflush(stdout);
                     free(files);
                     return -17;
                 }
+                printf("\e[%d;1HНе удалось вывести данные в терминал.", rows);
+                fflush(stdout);
                 free(files);
                 return -18;
             }
@@ -825,6 +1038,8 @@ int main()
     printf("\e[2J\e[H");
     if (tcsetattr(0, TCSANOW, &old) == -1)
     {
+        printf("\e[%d;1HНе удалось вернуть настройки терминала.", rows);
+        fflush(stdout);
         free(files);
         return -19;
     }
