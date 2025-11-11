@@ -621,7 +621,7 @@ int keyboard_input()
 
             /* переход в выбранный каталог */
             case '\n':
-                if (strcmp(files[cursor_pos].type, "directory") == 0)
+                if (file_counter > 0 && strcmp(files[cursor_pos].type, "directory") == 0)
                 {
                     char full_path[PATH_MAX];
                     snprintf(full_path, PATH_MAX, "%s/%s", path, files[cursor_pos].real_name);
@@ -888,6 +888,9 @@ void display_files_recursive(char *current_path, unsigned int columns[])
         {
             char subdir_path[PATH_MAX];
             snprintf(subdir_path, PATH_MAX, "%s/%s", current_path, local_files[i].real_name);
+            wchar_t wc_subdir_path[PATH_MAX];
+            mbstowcs(wc_subdir_path, subdir_path, PATH_MAX);
+            wprintf(L"\n'%ls':\n", wc_subdir_path);
             display_files_recursive(subdir_path, columns);
         }
     }
@@ -934,11 +937,7 @@ int main()
     {
         wchar_t wc_path[PATH_MAX];
         mbstowcs(wc_path, path, PATH_MAX);
-        wprintf(L"%ls\n", wc_path);
-        wprintf(L"%-*ls|%-*ls|%-*ls|%-*ls|%-*ls|%-*ls|%-*ls\n",
-            file_columns[0], L"name", file_columns[1], L"type", file_columns[2], L"owner",
-            file_columns[3], L"group", file_columns[4], L"permissions",
-            file_columns[5], L"mtime", file_columns[6], L"atime");
+        wprintf(L"'%ls':\n", wc_path);
 
         display_files_recursive(path, file_columns);
 
